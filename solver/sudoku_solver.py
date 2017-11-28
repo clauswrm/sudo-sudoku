@@ -1,3 +1,4 @@
+""" Sudoku solver that uses graph coloring to solve boards. """
 __author__ = 'Claus Martinsen'
 
 
@@ -84,73 +85,58 @@ class Graph:
         return repr(self.vertices)
 
 
-class Stack:
-    def __init__(self):
-        self.stack = []
-
-    def push(self, element):
-        self.stack.append(element)
-
-    def pop(self):
-        return self.stack.pop()
-
-    def __str__(self):
-        s = ''
-        for item in self.stack:
-            s += str(item) + '/'
-        return s
-
-
 class Sudoku_solver:
-    def __init__(self, sudoku, dim=3):
-        self.sudoku = sudoku
+    def __init__(self, sudoku_board, dim=3):
+        self.board = sudoku_board
         self.graph = Graph()
         self.dim = dim
         self.memory = []
+        self._setup()  # Sets up the sudoku board and graph
 
-        k = dim ** 2
+    def _setup(self):
+        k = self.dim ** 2
         for v_y in range(k):
             for v_x in range(k):
-                n = sudoku[v_y][v_x]
-                sudoku[v_y][v_x] = Vertex(x=v_x, y=v_y)
+                n = self.board[v_y][v_x]
+                self.board[v_y][v_x] = Vertex(x=v_x, y=v_y)
                 if n != 0:
-                    sudoku[v_y][v_x].number = n
+                    self.board[v_y][v_x].number = n
 
         for v_y in range(k):
             for v_x in range(k):
                 for x in range(k):
                     if x != v_x:
-                        sudoku[v_y][v_x].add_neighbor(sudoku[v_y][x])
+                        self.board[v_y][v_x].add_neighbor(self.board[v_y][x])
                 for y in range(k):
                     if y != v_y:
-                        sudoku[v_y][v_x].add_neighbor(sudoku[y][v_x])
+                        self.board[v_y][v_x].add_neighbor(self.board[y][v_x])
 
-                q_y, q_x = dim * (v_y // dim), dim * (v_x // dim)
-                for y in range(dim):
-                    for x in range(dim):
+                q_y, q_x = self.dim * (v_y // self.dim), self.dim * (v_x // self.dim)
+                for y in range(self.dim):
+                    for x in range(self.dim):
                         if q_y + y != v_y or q_x + x != v_x:
-                            sudoku[v_y][v_x].add_neighbor(sudoku[q_y + y][q_x + x])
+                            self.board[v_y][v_x].add_neighbor(self.board[q_y + y][q_x + x])
 
-        for row in sudoku:
+        for row in self.board:
             for vertex in row:
                 self.graph.add(vertex)
 
     def save_state(self, uncertian_vertex, uncertain_number):
         state = [[0 for _ in range(self.dim ** 2)] for _ in range(self.dim ** 2)]
         illegal_numbers = [[[] for _ in range(self.dim ** 2)] for _ in range(self.dim ** 2)]
-        for i, row in enumerate(self.sudoku):
+        for i, row in enumerate(self.board):
             for j, vertex in enumerate(row):
                 state[i][j] = vertex.number
                 illegal_numbers[i][j] = vertex.illegal_numbers.copy()
 
         self.memory.append((state, illegal_numbers, uncertian_vertex, uncertain_number))
 
-    def load_state(self):
+    def load_previous_legal_state(self):
         state, illegal_numbers, vertex, illegal_number = self.memory.pop()
         for i, row in enumerate(state):
             for j, number in enumerate(row):
-                self.sudoku[i][j].number = number
-                self.sudoku[i][j].illegal_numbers = illegal_numbers[i][j]
+                self.board[i][j].number = number
+                self.board[i][j].illegal_numbers = illegal_numbers[i][j]
 
         vertex.add_illegal_number(illegal_number)
 
@@ -171,6 +157,12 @@ class Sudoku_solver:
                 vertex.number_options = []
 
     def numerate_least_known_vertex(self):
+        """
+        When no cell can be given a number with 100% certainty, the one that
+        is adjacent to the largest number of un-numbered vertices (i.e. the one
+        with the most possible numbers) is chosen and numbered to the number
+        with the lowest value that is not used by its neighbors.
+        """
         lkv = self.graph[0]
         for vertex in self.graph:
             if len(vertex.number_options) > len(lkv.number_options):
@@ -180,7 +172,15 @@ class Sudoku_solver:
         self.save_state(lkv, i)
         lkv.number = i
 
-    def fill_in_simples(self):
+    def fill_in_sole_candidates(self):
+        """
+        When a specific cell can only contain a single number, that number is a
+        "sole candidate". This happens whenever all other numbers but the
+        candidate number exists in either the current block, column or row.
+
+        :return: Whether or not a sole candidate was found.
+        :rtype: bool
+        """
         changed = False
         for vertex in self.graph:
             if len(vertex.number_options) == 1:
@@ -188,16 +188,24 @@ class Sudoku_solver:
                 changed = True
         return changed
 
-    def fill_in_hidden_simples(self):
+    def fill_in_unique_candidates(self):
+        """
+        If a number can only be put in a single cell within a block, column or
+        row, then that number is guaranteed to fit there. Such a number is a
+        unique canditate.
+
+        :return: Whether or not a unique candidate was found.
+        :rtype: bool
+        """
         changed = False
-        for v_y, row in enumerate(self.sudoku):
+        for v_y, row in enumerate(self.board):
             for v_x, vertex in enumerate(row):
                 for number in vertex.number_options:
 
                     hidden_row, hidden_col, hidden_box = True, True, True
-                    for x in range(self.dim ** 2):
+                    for x in range(self.dim ** 2):  # Try to find unique in row
                         if x != v_x:
-                            if number in self.sudoku[v_y][x].number_options:
+                            if number in self.board[v_y][x].number_options:
                                 hidden_row = False
                                 break
                     if hidden_row:
@@ -205,9 +213,9 @@ class Sudoku_solver:
                         changed = True
                         continue
 
-                    for y in range(self.dim ** 2):
+                    for y in range(self.dim ** 2):  # Try to find unique in column
                         if y != v_y:
-                            if number in self.sudoku[y][v_x].number_options:
+                            if number in self.board[y][v_x].number_options:
                                 hidden_col = False
                                 break
                     if hidden_col:
@@ -216,10 +224,10 @@ class Sudoku_solver:
                         continue
 
                     q_y, q_x = self.dim * (v_y // self.dim), self.dim * (v_x // self.dim)
-                    for y in range(self.dim):
+                    for y in range(self.dim):  # Try to find unique in box
                         for x in range(self.dim):
                             if q_y + y != v_y or q_x + x != v_x:
-                                if number in self.sudoku[q_y + y][q_x + x].number_options:
+                                if number in self.board[q_y + y][q_x + x].number_options:
                                     hidden_box = False
                     if hidden_box:
                         vertex.number = number
@@ -228,13 +236,15 @@ class Sudoku_solver:
         return changed
 
     def is_solved(self):
+        """ Returns whether or not the board has all cells filled. """
         for vertex in self.graph:
             if vertex.number == 0:
                 return False
         return True
 
     def is_legal_board(self):
-        for row in self.sudoku:
+        """ Returns whether or not the board is in a legal state by the sudoku rules. """
+        for row in self.board:
             for vertex1 in row:
                 if vertex1.number == 0 and len(vertex1.number_options) < 1:
                     return False
@@ -245,27 +255,48 @@ class Sudoku_solver:
         return True
 
     def pprint(self):
-        for row in self.sudoku:
+        """ Pretty-prints the board. """
+        for row in self.board:
             for cell in row:
                 print(cell, end=' ')
             print()
         print()
 
-    def sovle(self, visual=False):
+    def solve(self, visual=False):
+        """
+        Solves a sudoku board by the folowing algorithm until the board is solved:
+
+        1) While sole or unique candidates exist, fill them in.
+        2) If in an illegal state, load last legal state* until in a legal state**.
+        3) If no more sole or unique candidates, numerate one and see where it goes.
+
+        *This will only happen if the numeration in step 3 was wrong, or if the
+         input board was unsolveable.
+
+        **If the only choice of number in a cell turned out to be illegal, this is
+         caused by another bad choice previous in the game chain. Therfore, it
+         is necessary to be able to load multiple states back.
+
+        :param visual: Prints the board at each iteration if True. Should only be
+         used for debugging or small 4*4 boards.
+         :type visual: bool
+        :return: Returns whether or not a legal solution was found.
+        :rtype: bool
+        """
         while not self.is_solved():
             self.update_possible_numbers()
             if visual:
                 self.pprint()
 
-            changed_simple, changed_hidden = True, True
-            while changed_simple or changed_hidden:
-                changed_simple = self.fill_in_simples()
+            found_sole, found_unique = True, True
+            while found_sole or found_unique:
+                found_sole = self.fill_in_sole_candidates()
                 self.update_possible_numbers()
-                changed_hidden = self.fill_in_hidden_simples()
+                found_unique = self.fill_in_unique_candidates()
                 self.update_possible_numbers()
 
             while not self.is_legal_board():
-                self.load_state()
+                self.load_previous_legal_state()
                 self.update_possible_numbers()
 
             if not self.is_solved():
@@ -276,56 +307,19 @@ class Sudoku_solver:
 
 
 if __name__ == '__main__':
-    sudoku_2d = [
-        [0, 0, 0, 0],
-        [0, 3, 0, 0],
-        [1, 0, 2, 0],
-        [0, 0, 0, 4]]
+    # Only executed when this module is run directly
+    # The following is an example of how to use the module
 
-    sudoku_test = [
-        [2, 9, 5, 7, 0, 0, 8, 6, 0],
-        [0, 3, 1, 8, 6, 5, 0, 2, 0],
-        [8, 0, 6, 0, 0, 0, 0, 0, 0],
-        [0, 0, 7, 0, 5, 0, 0, 0, 6],
-        [0, 0, 0, 3, 8, 7, 0, 0, 0],
-        [5, 0, 0, 0, 1, 6, 7, 0, 0],
-        [0, 0, 0, 5, 0, 0, 1, 0, 9],
-        [0, 2, 0, 6, 0, 0, 3, 5, 0],
-        [0, 5, 4, 0, 0, 8, 6, 7, 2]]
+    import json
 
-    sudoku_simple = [
-        [8, 0, 9, 0, 0, 0, 7, 0, 2],
-        [0, 7, 0, 0, 5, 0, 0, 1, 0],
-        [1, 0, 0, 7, 0, 4, 0, 0, 9],
-        [0, 0, 8, 1, 0, 0, 3, 0, 0],
-        [0, 4, 0, 0, 6, 0, 0, 8, 0],
-        [0, 0, 6, 3, 0, 0, 5, 0, 0],
-        [4, 0, 0, 9, 0, 2, 0, 0, 6],
-        [0, 9, 0, 0, 8, 0, 0, 7, 0],
-        [7, 0, 2, 0, 0, 0, 4, 0, 8]]
+    current_board = None
 
-    sudoku_easy = [
-        [0, 0, 0, 3, 0, 4, 0, 0, 0],
-        [0, 0, 0, 0, 2, 0, 0, 8, 0],
-        [0, 0, 0, 1, 0, 0, 0, 6, 5],
-        [0, 9, 0, 0, 0, 0, 5, 3, 7],
-        [2, 5, 0, 0, 0, 3, 0, 0, 0],
-        [0, 4, 0, 0, 0, 0, 0, 0, 1],
-        [3, 0, 0, 0, 1, 0, 0, 7, 0],
-        [0, 0, 0, 0, 0, 6, 0, 0, 0],
-        [0, 0, 6, 8, 0, 5, 9, 0, 0]]
+    with open('sudoku_boards.json') as board_file:
+        boards = json.load(board_file)
+        current_board = boards['sudoku_very_hard']
 
-    sudoku_very_hard_1 = [
-        [0, 0, 0, 9, 3, 0, 0, 5, 0],
-        [0, 0, 0, 0, 0, 7, 0, 0, 3],
-        [0, 2, 1, 0, 0, 0, 6, 0, 0],
-        [2, 0, 0, 7, 8, 4, 0, 0, 0],
-        [1, 9, 0, 0, 0, 0, 0, 0, 2],
-        [0, 0, 0, 0, 0, 0, 7, 0, 0],
-        [9, 0, 0, 0, 0, 0, 1, 7, 0],
-        [7, 0, 0, 0, 0, 0, 0, 2, 8],
-        [0, 0, 8, 1, 0, 0, 5, 0, 0]]
+    solver = Sudoku_solver(current_board, dim=3)
+    solver.solve()
+    solver.pprint()
 
-    S = Sudoku_solver(sudoku_very_hard_1, dim=3)
-    S.sovle()
-    S.pprint()
+    # TIME: sudoku_extreme -> 1 min 37 sec, others -> ~instant
