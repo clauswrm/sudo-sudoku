@@ -3,6 +3,7 @@ __author__ = 'Claus Martinsen'
 
 
 class Vertex:
+    """ A vertex in a graph, with atributes to be used for sudoku solving. """
     def __init__(self, x, y):
         self.coord = (x, y)
         self.neighbors = []
@@ -30,13 +31,14 @@ class Vertex:
         return len(self.neighbors)
 
     def __str__(self):
-        return str(self.number) if self.number is not None else '-'
+        return 'Vertex: ' + str(self.number)
 
     def __repr__(self):
         return '<Vertex: R=' + str(self.rank()) + ', C=' + str(self.number) + ', XY=' + str(self.coord) + '>'
 
 
 class Graph:
+    """ A graph containing vertecies. To be used for sudoku solving. """
     def __init__(self, vertices=list()):
         self.vertices = vertices
 
@@ -47,6 +49,13 @@ class Graph:
     def connect(vertex1, vertex2):
         vertex1.add_neighbor(vertex2)
 
+    def edge_count(self):
+        i = 0
+        for vertex in self:
+            i += vertex.rank()
+        i //= 2  # Each edge gets counted exactly twice
+        return i
+
     def __add__(self, other):
         return self.vertices + other.vertices
 
@@ -56,24 +65,14 @@ class Graph:
     def __len__(self):
         return len(self.vertices)
 
-    def edge_count(self):
-        i = 0
-        for vertex in self:
-            i += vertex.rank()
-        i //= 2  # Each edge gets counted exactly twice
-        return i
+    def __contains__(self, vertex):
+        return vertex in self.vertices
 
-    def __contains__(self, item):
-        return item in self.vertices
+    def __getitem__(self, index):
+        return self.vertices[index]
 
-    def __getitem__(self, item):
-        return self.vertices[item]
-
-    def __setitem__(self, key, value):
-        self.vertices[key] = value
-
-    def __delitem__(self, key):
-        del self.vertices[key]
+    def __setitem__(self, index, vertex):
+        self.vertices[index] = vertex
 
     def __iter__(self):
         return self.vertices.__iter__()
@@ -87,6 +86,7 @@ class Graph:
 
 class Sudoku_solver:
     def __init__(self, sudoku_board, dim=3):
+        """ Initializes a new sudoku solver based on the board and dimentions given. """
         self.board = sudoku_board
         self.graph = Graph()
         self.dim = dim
@@ -94,6 +94,7 @@ class Sudoku_solver:
         self._setup()  # Sets up the sudoku board and graph
 
     def _setup(self):
+        """ Sets up the internal graph structure based on the sudoku board. """
         k = self.dim ** 2
         for v_y in range(k):
             for v_x in range(k):
@@ -121,7 +122,12 @@ class Sudoku_solver:
             for vertex in row:
                 self.graph.add(vertex)
 
-    def save_state(self, uncertian_vertex, uncertain_number):
+    def save_legal_state(self, uncertian_vertex, uncertain_number):
+        """
+        Saves the board numbers and the illegal numbers for all cells on the
+        board. Also remembers the cell wich a uncertain number is placed, so
+        that the uncertian number is remembered.
+        """
         state = [[0 for _ in range(self.dim ** 2)] for _ in range(self.dim ** 2)]
         illegal_numbers = [[[] for _ in range(self.dim ** 2)] for _ in range(self.dim ** 2)]
         for i, row in enumerate(self.board):
@@ -132,6 +138,11 @@ class Sudoku_solver:
         self.memory.append((state, illegal_numbers, uncertian_vertex, uncertain_number))
 
     def load_previous_legal_state(self):
+        """
+        Updates the board numbers and the illegal numbers for all cells on the
+        board according to the last saved state. The wrong guess made when the
+        state was saved is added to the cells illegal numbers.
+        """
         state, illegal_numbers, vertex, illegal_number = self.memory.pop()
         for i, row in enumerate(state):
             for j, number in enumerate(row):
@@ -141,6 +152,7 @@ class Sudoku_solver:
         vertex.add_illegal_number(illegal_number)
 
     def update_possible_numbers(self):
+        """ Goes through all cells, updating each cells possible numbers. """
         for vertex in self.graph:
             if vertex.number == 0:  # Not colored
                 nums = [i for i in range(1, self.dim ** 2 + 1)]
@@ -169,7 +181,7 @@ class Sudoku_solver:
                 lkv = vertex
 
         i = min(lkv.number_options)
-        self.save_state(lkv, i)
+        self.save_legal_state(lkv, i)
         lkv.number = i
 
     def fill_in_sole_candidates(self):
@@ -258,7 +270,7 @@ class Sudoku_solver:
         """ Pretty-prints the board. """
         for row in self.board:
             for cell in row:
-                print(cell, end=' ')
+                print(cell.number, end=' ')
             print()
         print()
 
@@ -304,6 +316,9 @@ class Sudoku_solver:
                 self.update_possible_numbers()
 
         return self.is_legal_board()
+
+    def __repr__(self):
+        return '<Solver: Dim=' + str(self.dim) + ', Solved=' + str(self.is_solved()) + '>'
 
 
 if __name__ == '__main__':
