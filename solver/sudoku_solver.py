@@ -4,6 +4,7 @@ __author__ = 'Claus Martinsen'
 
 class Vertex:
     """ A vertex in a graph, with atributes to be used for sudoku solving. """
+
     def __init__(self, x, y):
         self.coord = (x, y)
         self.neighbors = []
@@ -22,10 +23,13 @@ class Vertex:
             self.neighbors.remove(neighbor)
 
     def add_illegal_number(self, number):
+        """ Adds a number to the list of illegal numbers. Returns wether the number was there from before or not. """
         if number in self.number_options:
             self.number_options.remove(number)
         if number not in self.illegal_numbers:
             self.illegal_numbers.append(number)
+            return True
+        return False
 
     def rank(self):
         return len(self.neighbors)
@@ -39,6 +43,7 @@ class Vertex:
 
 class Graph:
     """ A graph containing vertecies. To be used for sudoku solving. """
+
     def __init__(self, vertices=list()):
         self.vertices = vertices
 
@@ -143,6 +148,8 @@ class Sudoku_solver:
         board according to the last saved state. The wrong guess made when the
         state was saved is added to the cells illegal numbers.
         """
+        if len(self.memory) < 1:
+            raise IndexError('No previous state: len(self.memory < 1).')
         state, illegal_numbers, vertex, illegal_number = self.memory.pop()
         for i, row in enumerate(state):
             for j, number in enumerate(row):
@@ -179,6 +186,8 @@ class Sudoku_solver:
         for vertex in self.graph:
             if len(vertex.number_options) > len(lkv.number_options):
                 lkv = vertex
+        if len(lkv.number_options) == 0:
+            return
 
         i = min(lkv.number_options)
         self.save_legal_state(lkv, i)
@@ -247,6 +256,49 @@ class Sudoku_solver:
                         continue
         return changed
 
+    """
+    def intersection_removal(self):
+        for b_y in range(0, self.dim ** 2, 3):
+            for b_x in range(0, self.dim ** 2, 3):
+                pos_pointing_pair = []
+                for n in range(1, self.dim + 1):
+                    
+                for y in range(self.dim):
+                    for p in self.board[b_y + y][b_x]
+                for x in range(self.dim):"""
+
+    def x_wing(self):
+        num_pairs = [[] for _ in range(self.dim ** 2)]
+        for y, row in enumerate(self.board):
+            occurences = [0] * (self.dim ** 2)
+            for cell in row:
+                for pos in cell.number_options:
+                    occurences[pos - 1] += 1
+            for num, occ in enumerate(occurences):
+                if occ == 2:
+                    pair = [y]
+                    for x, cell in enumerate(row):
+                        if num + 1 in cell.number_options:
+                            pair.append(x)
+                    num_pairs[num].append(pair)
+
+        x_winged_cols = []
+        for num, pairs in enumerate(num_pairs):
+            n = len(pairs)
+            if n > 1:
+                for i in range(n):
+                    for j in range(n):
+                        if i != j:
+                            if pairs[i][1] == pairs[j][1] and pairs[i][2] == pairs[j][2]:
+                                x_winged_cols.append((num, pairs[i][1], pairs[i][0], pairs[j][0]))
+        change = False
+        for x_wing in x_winged_cols:
+            for r in range(self.dim ** 2):
+                if r != x_wing[2] and r != x_wing[3]:
+                    change = change or self.board[r][x_wing[1]].add_illegal_number(x_wing[0])
+
+        return change
+
     def is_solved(self):
         """ Returns whether or not the board has all cells filled. """
         for vertex in self.graph:
@@ -258,12 +310,11 @@ class Sudoku_solver:
         """ Returns whether or not the board is in a legal state by the sudoku rules. """
         for row in self.board:
             for vertex1 in row:
-                if vertex1.number == 0 and len(vertex1.number_options) < 1:
+                if vertex1.number == 0 and len(vertex1.number_options) == 0:
                     return False
-                for vertex2 in self.graph:
-                    if vertex2.number != 0:
-                        if vertex2 in vertex1.neighbors and vertex1.number == vertex2.number:
-                            return False
+                for vertex2 in vertex1.neighbors:
+                    if vertex2.number != 0 and vertex1.number == vertex2.number:
+                        return False
         return True
 
     def pprint(self):
@@ -299,21 +350,20 @@ class Sudoku_solver:
             self.update_possible_numbers()
             if visual:
                 self.pprint()
-
-            found_sole, found_unique = True, True
-            while found_sole or found_unique:
-                found_sole = self.fill_in_sole_candidates()
+            cont_1, cont_2 = True, True
+            while cont_1 or cont_2:
+                cont_1 = self.fill_in_sole_candidates()
                 self.update_possible_numbers()
-                found_unique = self.fill_in_unique_candidates()
+                cont_2 = self.fill_in_unique_candidates()
                 self.update_possible_numbers()
+                # cont_3 = self.x_wing()
+                # self.update_possible_numbers()
 
             while not self.is_legal_board():
                 self.load_previous_legal_state()
                 self.update_possible_numbers()
 
-            if not self.is_solved():
-                self.numerate_least_known_vertex()
-                self.update_possible_numbers()
+            self.numerate_least_known_vertex()
 
         return self.is_legal_board()
 
@@ -331,10 +381,9 @@ if __name__ == '__main__':
 
     with open('sudoku_boards.json') as board_file:
         boards = json.load(board_file)
-        current_board = boards['sudoku_very_hard']
+        current_board = boards['sudoku_extreme']
 
     solver = Sudoku_solver(current_board, dim=3)
-    solver.solve()
+    t = solver.solve()
+    print(t)
     solver.pprint()
-
-    # TIME: sudoku_extreme -> 1 min 37 sec, others -> ~instant
